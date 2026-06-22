@@ -85,9 +85,9 @@ static std::array<HookPatch*, 2> g_hooks {&g_menuRowBuilder, &g_vectorInject};
 
 static constexpr D2RLoaderPluginInfo PluginInfo {
     .apiVersion = D2RLOADER_PLUGIN_API_VERSION,
-    .id         = "d2r-wasd-cbe80-vector-inject",
-    .name       = "D2R WASD CBE80 Vector Inject",
-    .version    = "1.0.0",
+    .id         = "d2r-wasd-cbe80-vector-inject-controller-safe-v2",
+    .name       = "D2R WASD CBE80 Vector Inject Controller Safe V2",
+    .version    = "1.0.2-test",
     .author     = "yinyin333333",
     .flags      = D2RLoaderPluginFlag_None,
 };
@@ -209,6 +209,10 @@ static bool ReadDirections(DirectionSnapshot& dirs) noexcept {
     return SafeRead(reinterpret_cast<const void*>(g_exeBase + RVA_DirectionBytes), &dirs, sizeof(dirs));
 }
 
+static bool HasWasdDirection(const DirectionSnapshot& dirs) noexcept {
+    return dirs.up != 0 || dirs.right != 0 || dirs.down != 0 || dirs.left != 0;
+}
+
 static void ComputeWasdVector(const DirectionSnapshot& dirs, VectorSlots& out) noexcept {
     out.rawX = (dirs.right ? 1.0f : 0.0f) - (dirs.left ? 1.0f : 0.0f);
     out.rawY = (dirs.up ? 1.0f : 0.0f) - (dirs.down ? 1.0f : 0.0f);
@@ -238,11 +242,13 @@ static void SetXmmLowFloat(M128A& xmm, float value) noexcept {
 static void HandleVectorInject(CONTEXT* ctx, uintptr_t target, const HookPatch& hook) noexcept {
     const uintptr_t vectorBase = static_cast<uintptr_t>(ctx->Rdi) + static_cast<uintptr_t>(ctx->Rsi);
     DirectionSnapshot dirs {};
-    VectorSlots slots {};
-    if (ReadDirections(dirs)) ComputeWasdVector(dirs, slots);
-    WriteVectorSlots(vectorBase, slots);
+    if (ReadDirections(dirs) && HasWasdDirection(dirs)) {
+        VectorSlots slots {};
+        ComputeWasdVector(dirs, slots);
+        WriteVectorSlots(vectorBase, slots);
+    }
 
-    float xmm1Value = slots.rawY;
+    float xmm1Value = 0.0f;
     SafeReadValue(vectorBase + 0xD30, xmm1Value);
     SetXmmLowFloat(ctx->Xmm1, xmm1Value);
     ctx->Rip = target + hook.instructionLength;
